@@ -1,45 +1,103 @@
 import SwiftUI
 
 struct ActivationView: View {
-    @State private var key = ""
-    @State private var message = "Enter your activation key to continue."
-    @State private var loading = false
-    @State private var activated = false
+    @State private var activationKey = ""
+    @State private var message = ""
+    @State private var isLoading = false
+    @State private var isActivated = false
+    @State private var expiryDate: String?
 
     var body: some View {
         ZStack {
-            Color(red: 0.035, green: 0.055, blue: 0.10).ignoresSafeArea()
-            VStack(spacing: 22) {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 24) {
                 Spacer()
-                Image(systemName: "shield.lefthalf.filled").font(.system(size: 54)).foregroundStyle(.cyan)
-                Text("SARAN FF").font(.system(size: 32, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                if activated {
-                    Image(systemName: "checkmark.seal.fill").font(.system(size: 48)).foregroundStyle(.green)
-                    Text("Activation successful").foregroundStyle(.white)
-                } else {
-                    Text("ACTIVATE YOUR DEVICE").font(.headline).foregroundStyle(.white)
-                    TextField("Enter activation key", text: $key)
-                        .textInputAutocapitalization(.characters).autocorrectionDisabled()
-                        .padding(16).background(.white).clipShape(RoundedRectangle(cornerRadius: 12))
-                    Button { Task { await activate() } } label: {
-                        HStack { if loading { ProgressView().tint(.black) }; Text(loading ? "Checking..." : "ACTIVATE").bold() }
-                            .frame(maxWidth: .infinity).padding(16).background(.cyan)
-                            .foregroundStyle(.black).clipShape(RoundedRectangle(cornerRadius: 12))
-                    }.disabled(loading || key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 65))
+                    .foregroundColor(.cyan)
+
+                Text("SARAN FF")
+                    .font(.largeTitle.bold())
+                    .foregroundColor(.white)
+
+                Text("VERSION 1.1.1")
+                    .foregroundColor(.gray)
+
+                Text("ACTIVATE YOUR ACCESS")
+                    .font(.headline)
+                    .foregroundColor(.white)
+
+                TextField("Enter activation key", text: $activationKey)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .padding()
+                    .background(Color.white)
+                    .foregroundColor(.black)
+                    .cornerRadius(12)
+
+                Button(action: activate) {
+                    HStack {
+                        if isLoading {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("ACTIVATE")
+                                .bold()
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.cyan)
+                    .foregroundColor(.black)
+                    .cornerRadius(12)
                 }
-                Text(message).font(.footnote).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.75))
+                .disabled(isLoading || activationKey.isEmpty)
+
+                if !message.isEmpty {
+                    Text(message)
+                        .foregroundColor(isActivated ? .green : .red)
+                        .multilineTextAlignment(.center)
+                }
+
                 Spacer()
-                Text("Version 1.1.1").font(.caption).foregroundStyle(.white.opacity(0.45))
-            }.padding(28)
+
+                Text("SARAN FF • SECURE ACTIVATION")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .padding(28)
         }
     }
 
-    @MainActor private func activate() async {
-        loading = true
-        defer { loading = false }
-        do {
-            activated = try await ActivationService.activate(key: key)
-            message = activated ? "Your key was accepted." : "The server did not confirm this key."
-        } catch { message = error.localizedDescription }
+    private func activate() {
+        guard !activationKey.trimmingCharacters(in: .whitespaces).isEmpty else {
+            message = "Please enter your activation key."
+            return
+        }
+
+        isLoading = true
+        message = ""
+        isActivated = false
+
+        Task {
+            do {
+                let result = try await ActivationService.shared.activate(
+                    key: activationKey.trimmingCharacters(in: .whitespaces)
+                )
+
+                await MainActor.run {
+                    isActivated = true
+                    message = result.message
+                    expiryDate = result.expires
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    message = error.localizedDescription
+                    isLoading = false
+                }
+            }
+        }
     }
 }
