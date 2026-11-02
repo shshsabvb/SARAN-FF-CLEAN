@@ -1,28 +1,50 @@
 import Foundation
 import UIKit
 
-enum ActivationService {
-    static func activate(key: String) async throws -> Bool {
-        guard let device = UIDevice.current.identifierForVendor?.uuidString else {
-            throw NSError(domain: "SARAN FF", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create device identifier."])
-        }
-        let url = URL(string: "https://saran-ff-api.onrender.com/activate")!
-        var request = URLRequest(url: url)
+struct ActivationResponse: Decodable {
+    let valid: Bool
+    let message: String
+    let expires: String?
+}
+
+final class ActivationService {
+    static let shared = ActivationService()
+
+    private let endpoint = URL(
+        string: "https://saran-ff-api.onrender.com/activate"
+    )!
+
+    func activate(key: String) async throws -> ActivationResponse {
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField: "Content-Type"
+        )
+
+        let device = UIDevice.current.identifierForVendor?.uuidString ?? "UNKNOWN"
+
         request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "key": key.trimmingCharacters(in: .whitespacesAndNewlines), "device": device
+            "key": key,
+            "device": device
         ])
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        guard (200...299).contains(http.statusCode) else {
-            throw NSError(domain: "SARAN FF", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "Activation rejected"])
+
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
         }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.cannotParseResponse) }
-        for name in ["success", "valid", "activated"] {
-            if let value = json[name] as? Bool { return value }
+
+        let result = try JSONDecoder().decode(ActivationResponse.self, from: data)
+
+        guard http.statusCode == 200, result.valid else {
+            throw NSError(
+                domain: "Activation",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: result.message]
+            )
         }
-        throw NSError(domain: "SARAN FF", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unexpected activation API response. Please verify the server response format."])
+
+        return result
     }
 }
